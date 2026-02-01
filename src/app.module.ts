@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
@@ -11,12 +12,14 @@ import { ClassesModule } from './classes/classes.module';
 import { WorkoutsModule } from './workouts/workouts.module';
 import { ResultsModule } from './results/results.module';
 import { AccessModule } from './access/access.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -32,7 +35,9 @@ import { AccessModule } from './access/access.module';
     WorkoutsModule,
     ResultsModule,
     AccessModule,
+    SettingsModule,
   ],
+
   controllers: [AppController],
   providers: [AppService],
 })

@@ -24,7 +24,11 @@ export class Subscription extends Document {
   @Prop({ required: true })
   endDate: Date;
 
-  @Prop({ type: String, enum: SubscriptionStatus, default: SubscriptionStatus.ACTIVE })
+  @Prop({
+    type: String,
+    enum: SubscriptionStatus,
+    default: SubscriptionStatus.ACTIVE,
+  })
   status: SubscriptionStatus;
 
   @Prop({ type: [{ date: Date, amount: Number, method: String }] })
@@ -32,3 +36,5 @@ export class Subscription extends Document {
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);
+// Helpful indexes for queries
+SubscriptionSchema.index({ status: 1, endDate: 1 });

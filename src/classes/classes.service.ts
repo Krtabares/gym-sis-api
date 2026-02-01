@@ -2,16 +2,21 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ClassType, Schedule } from './entities/class-item.entity';
+import { RecurringSchedule } from './entities/recurring-schedule.entity';
 import { Booking, BookingStatus } from './entities/booking.entity';
 import { MembershipsService } from '../memberships/memberships.service';
+import { SettingsService } from '../settings/settings.service';
+import { UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class ClassesService {
   constructor(
     @InjectModel(ClassType.name) private classTypeModel: Model<ClassType>,
     @InjectModel(Schedule.name) private scheduleModel: Model<Schedule>,
+    @InjectModel(RecurringSchedule.name) private recurringModel: Model<RecurringSchedule>,
     @InjectModel(Booking.name) private bookingModel: Model<Booking>,
     private membershipsService: MembershipsService,
+    private settingsService: SettingsService,
   ) {}
 
   // Class Type Management
@@ -22,6 +27,41 @@ export class ClassesService {
 
   async findAllClassTypes(): Promise<ClassType[]> {
     return this.classTypeModel.find().exec();
+  }
+
+  async deleteClassType(id: string): Promise<any> {
+    // Check if being used in recurring schedules
+    const isUsed = await this.recurringModel.exists({ classTypeId: id });
+    if (isUsed) {
+      throw new BadRequestException('Cannot delete category being used in the weekly schedule');
+    }
+    return this.classTypeModel.findByIdAndDelete(id).exec();
+  }
+
+  // Recurring Schedule Management
+  async createRecurring(data: any): Promise<RecurringSchedule> {
+    const newRecurring = new this.recurringModel(data);
+    return newRecurring.save();
+  }
+
+  async findAllRecurring(): Promise<RecurringSchedule[]> {
+    return this.recurringModel.find().populate('classTypeId').populate('coachId', 'name').exec();
+  }
+
+  async deleteRecurring(id: string): Promise<any> {
+    const recurring = await this.recurringModel.findById(id).exec();
+    if (!recurring) return;
+
+    // Optional: Clean up future schedules generated from this pattern
+    const today = new Date();
+    await this.scheduleModel.deleteMany({
+      classTypeId: recurring.classTypeId,
+      coachId: recurring.coachId, // Matches the specific coach too
+      dateTime: { $gte: today },
+      attendees: { $size: 0 } // Only delete if nobody has booked yet
+    }).exec();
+
+    return this.recurringModel.findByIdAndDelete(id).exec();
   }
 
   // Schedule Management
@@ -39,8 +79,18 @@ export class ClassesService {
     return this.scheduleModel.find().populate('classTypeId').populate('coachId', 'name').exec();
   }
 
+  async deleteSchedule(id: string): Promise<any> {
+    const schedule = await this.scheduleModel.findById(id).exec();
+    if (!schedule) throw new NotFoundException('Schedule not found');
+    
+    // Also delete associated bookings
+    await this.bookingModel.deleteMany({ scheduleId: id }).exec();
+    
+    return this.scheduleModel.findByIdAndDelete(id).exec();
+  }
+
   // Booking Logic
-  async bookClass(userId: string, scheduleId: string): Promise<Booking> {
+  async bookClass(userId: string, scheduleId: string, userRole?: string): Promise<Booking> {
     // 1. Check active subscription
     const subscription = await this.membershipsService.findUserSubscription(userId);
     if (!subscription) {
@@ -51,7 +101,28 @@ export class ClassesService {
     const schedule = await this.scheduleModel.findById(scheduleId).exec();
     if (!schedule) throw new NotFoundException('Schedule not found');
 
+    // --- Time Restriction Check ---
+    const isAdmin = userRole === UserRole.ADMIN || userRole === UserRole.OWNER;
+    if (!isAdmin) {
+      const windowDays = await this.settingsService.findOne('bookingWindowDays');
+      if (windowDays !== null) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const limitDate = new Date(today);
+        limitDate.setDate(limitDate.getDate() + windowDays);
+        limitDate.setHours(23, 59, 59, 999);
+
+        const classDate = new Date(schedule.dateTime);
+        if (classDate > limitDate) {
+          throw new BadRequestException(`No puedes reservar clases con más de ${windowDays} días de antelación.`);
+        }
+      }
+    }
+    // ------------------------------
+
     if (schedule.attendees.length >= schedule.capacity) {
+
       throw new BadRequestException('Class is full');
     }
 
@@ -96,5 +167,17 @@ export class ClassesService {
     }).exec();
 
     return booking;
+  }
+
+  async findUserBookings(userId: string): Promise<any[]> {
+    return this.bookingModel.find({ userId, status: BookingStatus.CONFIRMED })
+      .populate({
+        path: 'scheduleId',
+        populate: [
+          { path: 'classTypeId' },
+          { path: 'coachId', select: 'name' }
+        ]
+      })
+      .exec();
   }
 }

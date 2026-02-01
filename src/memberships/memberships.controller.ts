@@ -1,7 +1,16 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { MembershipsService } from './memberships.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { ListSubscriptionsDto } from './dto/list-subscriptions.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -32,7 +41,9 @@ export class MembershipsController {
   // Subscriptions
   @Post('subscriptions')
   @Roles(UserRole.OWNER, UserRole.ADMIN) // Usually staff assigns memberships, or we'd have a payment gateway
-  async createSubscription(@Body() createSubscriptionDto: CreateSubscriptionDto) {
+  async createSubscription(
+    @Body() createSubscriptionDto: CreateSubscriptionDto,
+  ) {
     return this.membershipsService.createSubscription(createSubscriptionDto);
   }
 
@@ -43,7 +54,7 @@ export class MembershipsController {
 
   @Get('subscriptions')
   @Roles(UserRole.OWNER, UserRole.ADMIN)
-  async findAllSubscriptions() {
-    return this.membershipsService.findAllSubscriptions();
+  async findAllSubscriptions(@Query() query: ListSubscriptionsDto) {
+    return this.membershipsService.findAllSubscriptions(query);
   }
 }
